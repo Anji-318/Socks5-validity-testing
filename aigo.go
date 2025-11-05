@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"flag"
 	"log"
 	"mime/multipart"
 	"net"
@@ -40,6 +41,7 @@ type Config struct {
 		OutputDir     string   `ini:"output_dir"`
 		CheckTimeout  int      `ini:"check_timeout"`
 		MaxConcurrent int      `ini:"max_concurrent"`
+		SpeedTestURL  string   `ini:"speed_test_url"`
 	} `ini:"settings"`
 }
 
@@ -108,6 +110,14 @@ const GEOIP_DB_URL = "https://github.com/P3TERX/GeoLite.mmdb/releases/latest/dow
 // GEOIP_DB_PATH 是 GeoIP 数据库的本地路径
 const GEOIP_DB_PATH = "GeoLite2-Country.mmdb"
 
+// 默认测速文件地址
+const DEFAULT_SPEED_TEST_URL = "https://speed.cloudflare.com/__down?bytes=100000000"
+
+// 可修改的测速地址变量
+var SpeedTestURL = DEFAULT_SPEED_TEST_URL
+
+const SPEED_TEST_MIN_SIZE = 100000000
+
 var (
 	// OUTPUT_FILES 定义了输出文件的名称
 	OUTPUT_FILES = map[string]string{
@@ -119,6 +129,7 @@ var (
 		"https":            "https.txt",
 		"socks5_auth_tg":   "socks5_auth_tg.txt",
 		"socks5_noauth_tg": "socks5_noauth_tg.txt",
+		"socks5_csv":       "socks5.csv",
 	}
 
 	// COUNTRY_CODE_TO_NAME 存储国家代码到中文名的映射
@@ -195,20 +206,21 @@ var (
 		"JO": "🇯🇴", "JP": "🇯🇵", "KE": "🇰🇪", "KG": "🇰🇬", "KH": "🇰🇭", "KI": "🇰🇮", "KM": "🇰🇲", "KN": "🇰🇳",
 		"KP": "🇰🇵", "KR": "🇰🇷", "KW": "🇰🇼", "KY": "🇰🇾", "KZ": "🇰🇿", "LA": "🇱🇦", "LB": "🇱🇧", "LC": "🇱🇨",
 		"LI": "🇱🇮", "LK": "🇱🇰", "LR": "🇱🇷", "LS": "🇱🇸", "LT": "🇱🇹", "LU": "🇱🇺", "LV": "🇱🇻", "LY": "🇱🇾",
-		"MA": "🇲🇦", "MC": "🇲🇨", "MD": "🇲🇩", "ME": "🇲🇪", "MF": "🇲🇫", "MG": "🇲🇬", "MH": "🇲🇭", "MK": "🇲🇰",
+		"MA": "🇲🇦", "MC": "🇲🇨", "MD": "🇲🇩", "ME": "🇲🇪", "MF": "🇲🇫", "MG": "🇲🇬", "MH": "🇲🇷", "MK": "🇲🇰",
 		"ML": "🇲🇱", "MM": "🇲🇲", "MN": "🇲🇳", "MO": "🇲🇴", "MP": "🇲🇵", "MQ": "🇲🇶", "MR": "🇲🇷", "MS": "🇲🇸",
 		"MT": "🇲🇹", "MU": "🇲🇺", "MV": "🇲🇻", "MW": "🇲🇼", "MX": "🇲🇽", "MY": "🇲🇾", "MZ": "🇲🇿", "NA": "🇳🇦",
 		"NC": "🇳🇨", "NE": "🇳🇪", "NF": "🇳🇫", "NG": "🇳🇬", "NI": "🇳🇮", "NL": "🇳🇱", "NO": "🇳🇴", "NP": "🇳🇵",
 		"NR": "🇳🇷", "NU": "🇳🇺", "NZ": "🇳🇿", "OM": "🇴🇲", "PA": "🇵🇦", "PE": "🇵🇪", "PF": "🇵🇫", "PG": "🇵🇬",
 		"PH": "🇵🇭", "PK": "🇵🇰", "PL": "🇵🇱", "PM": "🇵🇲", "PN": "🇵🇳", "PR": "🇵🇷", "PS": "🇵🇸", "PT": "🇵🇹",
 		"PW": "🇵🇼", "PY": "🇵🇾", "QA": "🇶🇦", "RE": "🇷🇪", "RO": "🇷🇴", "RS": "🇷🇸", "RU": "🇷🇺", "RW": "🇷🇼",
-		"SA": "🇸🇦", "SB": "🇸🇬", "SC": "🇸🇨", "SD": "🇸🇩", "SE": "🇸🇪", "SG": "🇸🇬", "SH": "🇸🇭", "SI": "🇸🇮",
+		"SA": "🇸🇦", "SB": "🇸🇧", "SC": "🇸🇨", "SD": "🇸🇩", "SE": "🇸🇪", "SG": "🇸🇬", "SH": "🇸🇭", "SI": "🇸🇮",
 		"SJ": "🇸🇯", "SK": "🇸🇰", "SL": "🇸🇱", "SM": "🇸🇲", "SN": "🇸🇳", "SO": "🇸🇴", "SR": "🇸🇷", "SS": "🇸🇸",
 		"ST": "🇸🇹", "SV": "🇸🇻", "SX": "🇸🇽", "SY": "🇸🇾", "SZ": "🇸🇿", "TC": "🇹🇨", "TD": "🇹🇩", "TF": "🇹🇫",
 		"TG": "🇹🇬", "TH": "🇹🇭", "TJ": "🇹🇯", "TK": "🇹🇰", "TL": "🇹🇱", "TM": "🇹🇲", "TN": "🇹🇳", "TO": "🇹🇴",
-		"TR": "🇹🇷", "TT": "🇹🇹", "TV": "🇹🇻", "UG": "🇺🇬", "UM": "🇺🇲", "US": "🇺🇸", "UY": "🇺🇾", "UZ": "🇺🇿",
-		"VA": "🇻🇦", "VC": "🇻🇨", "VE": "🇻🇪", "VG": "🇻🇬", "VI": "🇻🇮", "VN": "🇻🇳", "VU": "🇻🇺", "WF": "🇼🇫",
-		"WS": "🇼🇸", "XK": "🇽🇰", "YE": "🇾🇹", "YT": "🇾🇹", "ZA": "🇿🇦", "ZM": "🇿🇲", "ZW": "🇿🇼", "UNKNOWN": "🌐",
+		"TR": "🇹🇷", "TT": "🇹🇹", "TV": "🇹🇻", "TW": "🇹🇼", "TZ": "🇹🇿", "UA": "🇺🇦", "UG": "🇺🇬", "UM": "🇺🇲",
+		"US": "🇺🇸", "UY": "🇺🇾", "UZ": "🇺🇿", "VA": "🇻🇦", "VC": "🇻🇨", "VE": "🇻🇪", "VG": "🇻🇬", "VI": "🇻🇮",
+		"VN": "🇻🇳", "VU": "🇻🇺", "WF": "🇼🇫", "WS": "🇼🇸", "XK": "🇽🇰", "YE": "🇾🇪", "YT": "🇾🇹", "ZA": "🇿🇦",
+		"ZM": "🇿🇲", "ZW": "🇿🇼", "UNKNOWN": "🌐",
 	}
 
 	// FAILURE_REASON_MAP 定义失败原因的规范化映射
@@ -245,6 +257,7 @@ type ProxyResult struct {
 	Success  bool
 	IP       string
 	Reason   string
+	DownloadSpeed float64
 }
 
 // Telegram API 响应结构体
@@ -271,7 +284,7 @@ var (
 	clientCacheMutex    sync.Mutex
 )
 
-// 计算字符串在终端中的显示宽度，中文字符占2个宽度（🚫固化）
+// 计算字符串在终端中的显示宽度，中文字符占2个宽度，表情符号等也占2个宽度
 func getStringDisplayWidth(s string) int {
 	width := 0
 	for _, r := range s {
@@ -348,7 +361,7 @@ func loadConfig(configPath string) error {
 	}
 
 	// 使用新的函数来绘制标题框，并将标题文本设置为黄色
-	DrawCenteredTitleBox(ColorYellow+"   代 理 检 测 工 具 v1.0   "+ColorReset, width)
+	DrawCenteredTitleBox(ColorYellow+"  s5 代 理 检 测 工 具 v1.0.3  "+ColorReset, width)
 
 	// 打印美化后的配置加载成功提示
 	log.Println(ColorGreen + "✅ 配置加载成功！" + ColorReset)
@@ -364,7 +377,11 @@ func loadConfig(configPath string) error {
 		log.Println(ColorYellow + "- 没有预设代理，将使用直连方式下载GeoIP数据库。" + ColorReset)
 	}
 
-	log.Printf(ColorCyan+"- 检测超时设置为 %d 秒，最大并发数 %d。\n", config.Settings.CheckTimeout, config.Settings.MaxConcurrent)
+	log.Printf(ColorCyan+"- 输入目录 %s\n", config.Settings.FdipDir)
+	log.Printf(ColorCyan+"- 输出目录 %s\n", config.Settings.OutputDir)
+	log.Printf(ColorCyan+"- 测速地址 %s\n", config.Settings.SpeedTestURL)
+	log.Printf(ColorCyan+"- 检测超时设置为 %d 秒，\n", config.Settings.CheckTimeout)
+	log.Printf(ColorCyan+"- 最大并发数 %d。\n" + ColorReset, config.Settings.MaxConcurrent)
 	log.Println(ColorCyan + "------------------------------------------" + ColorReset)
 
 	return nil
@@ -623,6 +640,26 @@ func extractProxiesFromFile(dir string, maxGoRoutines int) chan *ProxyInfo {
 							continue
 						}
 
+						// 新格式：如果包含逗号，取逗号前部分作为URL
+						if strings.Contains(line, ",") {
+							parts := strings.Split(line, ",")
+							proxyURLStr := strings.TrimSpace(parts[0])
+							parsedURL, err := url.Parse(proxyURLStr)
+							if err == nil && parsedURL.Scheme != "" && parsedURL.Host != "" {
+								protocol := parsedURL.Scheme
+								if strings.HasPrefix(protocol, "socks5") && parsedURL.User != nil {
+									protocol = "socks5_auth"
+								} else if strings.HasPrefix(protocol, "socks5") && parsedURL.User == nil {
+									protocol = "socks5_noauth"
+								}
+								proxiesChan <- &ProxyInfo{
+									URL:      parsedURL.String(),
+									Protocol: protocol,
+								}
+								continue
+							}
+						}
+
 						// 1. 尝试以 `#` 分割并解析为 URL 格式 (socks5://user:pass@host:port#...)
 						proxyURLStr := strings.SplitN(line, "#", 2)[0]
 						parsedURL, err := url.Parse(proxyURLStr)
@@ -689,41 +726,54 @@ func extractProxiesFromFile(dir string, maxGoRoutines int) chan *ProxyInfo {
 // testProxy 测试单个代理的有效性
 func testProxy(ctx context.Context, proxyInfo *ProxyInfo) ProxyResult {
 	start := time.Now()
+
+	// 解析 URL
 	_, err := url.Parse(proxyInfo.URL)
 	if err != nil {
-		return ProxyResult{URL: proxyInfo.URL, Success: false, Reason: fmt.Sprintf("URL解析错误: %v", err)}
+		return ProxyResult{URL: proxyInfo.URL, Success: false, Reason: "URL解析失败"}
 	}
 
+	// 创建代理客户端
 	var transport *http.Transport
 	transport, err = createTransportWithProxy(proxyInfo.URL)
 	if err != nil {
-		return ProxyResult{URL: proxyInfo.URL, Success: false, Reason: fmt.Sprintf("创建代理客户端失败: %v", err)}
+		return ProxyResult{URL: proxyInfo.URL, Success: false, Reason: "代理创建失败"}
+	}
+
+	// 使用配置中的超时值，如果配置未指定，则使用默认 30 秒
+	timeout := 30 // 默认超时 30 秒
+	if config.Settings.CheckTimeout > 0 {
+		timeout = config.Settings.CheckTimeout
 	}
 
 	client := &http.Client{
 		Transport: transport,
-		Timeout:   time.Duration(config.Settings.CheckTimeout) * time.Second,
+		Timeout:   time.Duration(timeout) * time.Second, // 使用动态超时值
 	}
 
+	// 创建请求并发送
 	req, err := http.NewRequestWithContext(ctx, "GET", TEST_URL, nil)
 	if err != nil {
-		return ProxyResult{URL: proxyInfo.URL, Success: false, Reason: fmt.Sprintf("创建请求失败: %v", err)}
+		return ProxyResult{URL: proxyInfo.URL, Success: false, Reason: "请求创建失败"}
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return ProxyResult{URL: proxyInfo.URL, Success: false, Reason: fmt.Sprintf("网络错误: %v", err)}
+		return ProxyResult{URL: proxyInfo.URL, Success: false, Reason: "网络错误"}
 	}
 	defer resp.Body.Close()
 
+	// 检查 HTTP 响应状态码
 	if resp.StatusCode != http.StatusOK {
-		return ProxyResult{URL: proxyInfo.URL, Success: false, Reason: fmt.Sprintf("HTTP Status: %d", resp.StatusCode)}
+		return ProxyResult{URL: proxyInfo.URL, Success: false, Reason: fmt.Sprintf("HTTP 错误: %d", resp.StatusCode)}
 	}
 
+	// 计算延迟
 	latency := time.Since(start).Seconds() * 1000 // 转换为毫秒
 	body, _ := io.ReadAll(resp.Body)
 
-	return ProxyResult{
+	// 初始化结果
+	result := ProxyResult{
 		URL:      proxyInfo.URL,
 		Protocol: proxyInfo.Protocol,
 		Latency:  latency,
@@ -731,6 +781,52 @@ func testProxy(ctx context.Context, proxyInfo *ProxyInfo) ProxyResult {
 		IP:       strings.TrimSpace(string(body)),
 		Reason:   "",
 	}
+
+	// 为下载测试设置更高的超时
+	client.Timeout = 30 * time.Second
+
+	// 开始下载速度测试
+	downloadStart := time.Now()
+	req, err = http.NewRequestWithContext(ctx, "GET", SpeedTestURL, nil)
+	if err != nil {
+		result.Reason = fmt.Sprintf("下载请求创建失败: %v", err)
+		return result
+	}
+
+	resp, err = client.Do(req)
+	if err != nil {
+		result.Reason = fmt.Sprintf("下载失败: %v", err)
+		return result
+	}
+	defer resp.Body.Close()
+
+	// 检查下载响应状态码
+	if resp.StatusCode != http.StatusOK {
+		result.Reason = fmt.Sprintf("下载 HTTP 错误: %d", resp.StatusCode)
+		return result
+	}
+
+	// 计算下载速度
+	n, err := io.Copy(io.Discard, resp.Body)
+	downloadDuration := time.Since(downloadStart).Seconds()
+	if n > 0 && downloadDuration > 0 {
+		result.DownloadSpeed = float64(n) / (1024 * 1024) / downloadDuration
+	} else {
+		result.DownloadSpeed = 0
+	}
+
+	// 处理下载错误
+	if err != nil {
+		if strings.Contains(err.Error(), "context deadline exceeded") {
+			result.Reason = fmt.Sprintf("超时 (已下载 %.2f MB)", float64(n)/(1024*1024))
+		} else {
+			result.Reason = fmt.Sprintf("下载错误: %v (已下载 %.2f MB)", err, float64(n)/(1024*1024))
+		}
+	} else if n < SPEED_TEST_MIN_SIZE {
+		result.Reason = fmt.Sprintf("下载大小不足: %d 字节", n)
+	}
+
+	return result
 }
 
 // createTransportWithProxy 创建一个带代理的 http.Transport
@@ -841,7 +937,7 @@ func createTelegramClientWithProxy(proxyURL string) (*http.Client, error) {
 	} else {
 		transport, err = createTransportWithProxy(proxyURL)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("代理验证失败: %v", err)
 		}
 	}
 
@@ -877,25 +973,28 @@ func getTelegramClient() *http.Client {
 	var client *http.Client
 	var err error
 
-	// 遍历预设代理列表，找到一个可用的客户端并缓存
+	// 尝试通过预设代理连接 Telegram
 	for _, proxyURL := range config.Settings.PresetProxy {
-		log.Printf("⏳ 尝试通过预设代理 %s 连接 Telegram API...\n", proxyURL)
+		log.Printf("⏳ 尝试代理 %s...\n", proxyURL)
 		client, err = createTelegramClientWithProxy(proxyURL)
 		if err == nil {
-			log.Printf("🟢 成功通过代理 %s 建立 Telegram 会话。\n", proxyURL)
+			log.Printf("🟢 成功通过代理建立 Telegram 会话。\n")
 			telegramClientCache = client // 缓存成功的客户端
 			return client
 		}
-		log.Printf("❌ 预设代理 %s 连接 Telegram 失败: %v\n", proxyURL, err)
+		// 简洁显示：仅代理 URL + 失败原因，不打印详细 err（详细 err 已记录到文件日志）
+		log.Printf("❌ 代理 %s 验证失败\n", proxyURL)
 	}
 
-	log.Println("⏳ 所有预设代理均失败，尝试直连...")
+	// 如果所有代理都失败，尝试直连
+	log.Println("⏳ 尝试直连 Telegram API...")
 	client, err = createTelegramClientWithProxy("")
 	if err == nil {
 		log.Println("✅ 直连 Telegram API 成功。")
-		telegramClientCache = client // 缓存直连客户端
+		telegramClientCache = client
 		return client
 	}
+
 	log.Println("❌ 直连 Telegram API 失败，所有连接方式均失败。")
 	return nil
 }
@@ -903,13 +1002,13 @@ func getTelegramClient() *http.Client {
 // sendTelegramMessage 发送 Telegram 消息
 func sendTelegramMessage(message string) bool {
 	if config.Telegram.BotToken == "" || config.Telegram.ChatID == "" {
-		log.Println("❌ 未配置 TELEGRAM_BOT_TOKEN 或 TELEGRAM_CHAT_ID，跳过 Telegram 通知")
+		log.Println("❌ Telegram 配置不完整，跳过消息发送")
 		return false
 	}
 
 	client := getTelegramClient()
 	if client == nil {
-		log.Println("❌ 无法建立网络连接，跳过 Telegram 消息发送。")
+		log.Println("❌ 无法建立 Telegram 连接，跳过消息发送")
 		return false
 	}
 
@@ -923,20 +1022,19 @@ func sendTelegramMessage(message string) bool {
 	jsonPayload, _ := json.Marshal(payload)
 	resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonPayload))
 	if err != nil {
-		log.Printf("❌ Telegram 消息发送失败: %v\n", err)
-		// 如果发送失败，清除缓存客户端，以便下次重新验证
+		log.Println("❌ Telegram 消息发送失败")
+		// 清除缓存客户端
 		clientCacheMutex.Lock()
 		telegramClientCache = nil
 		clientCacheMutex.Unlock()
-		log.Println("⚠️ Telegram 客户端已失效，已清除缓存，下次将重新验证。")
 		return false
 	}
 	defer resp.Body.Close()
 
 	var apiResp telegramAPIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil || !apiResp.Ok {
-		log.Printf("❌ Telegram API 错误: %s\n", apiResp.Description)
-		// 如果API返回错误，清除缓存客户端
+		log.Println("❌ Telegram 消息发送失败: API 错误")
+		// 清除缓存客户端
 		clientCacheMutex.Lock()
 		telegramClientCache = nil
 		clientCacheMutex.Unlock()
@@ -1004,7 +1102,7 @@ func sendTelegramFile(filePath string) bool {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("❌ 文件 %s 发送失败: %v\n", filePath, err)
+		log.Printf("❌ 文件 %s 发送失败\n", filePath)
 		// 如果发送失败，清除缓存客户端
 		clientCacheMutex.Lock()
 		telegramClientCache = nil
@@ -1041,21 +1139,32 @@ func writeValidProxies(validProxies []ProxyResult) {
 		key := strings.Replace(proxy.Protocol, "socks5h", "socks5", 1)
 		groupedProxies[key] = append(groupedProxies[key], proxy)
 
-		// 为socks5代理单独处理Telegram格式
+		// 为 socks5 代理单独处理 Telegram 格式
 		if key == "socks5_auth" || key == "socks5_noauth" {
 			groupedProxies[key+"_tg"] = append(groupedProxies[key+"_tg"], proxy)
 		}
 	}
 
+	// 对每个代理组进行下载速度降序排序
+	for key, proxies := range groupedProxies {
+		// 排序：按下载速度降序排列
+		sort.Slice(proxies, func(i, j int) bool {
+			return proxies[i].DownloadSpeed > proxies[j].DownloadSpeed
+		})
+		groupedProxies[key] = proxies
+	}
+
+	// 生成输出文件
 	for key, file := range OUTPUT_FILES {
+		// 忽略处理 CSV 文件，单独处理
+		if key == "socks5_csv" {
+			continue
+		}
+
 		proxies := groupedProxies[key]
 		fullPath := filepath.Join(config.Settings.OutputDir, file)
 
 		if len(proxies) > 0 {
-			sort.Slice(proxies, func(i, j int) bool {
-				return proxies[i].Latency < proxies[j].Latency
-			})
-
 			outFile, err := os.Create(fullPath)
 			if err != nil {
 				log.Printf("❌ 写入文件 %s 失败: %v\n", fullPath, err)
@@ -1071,22 +1180,34 @@ func writeValidProxies(validProxies []ProxyResult) {
 				}
 				countryName := COUNTRY_CODE_TO_NAME[countryCode]
 
-				var line string
+				// 检查是否为 TG 格式文件，需要转换 SOCKS5 为 Telegram MTProto 链接
+				var proxyURL string
 				if strings.HasSuffix(key, "_tg") {
-					parsedURL, _ := url.Parse(p.URL)
-					query := url.Values{}
-					query.Set("server", parsedURL.Hostname())
-					query.Set("port", parsedURL.Port())
-					if parsedURL.User != nil {
-						query.Set("user", parsedURL.User.Username())
-						password, _ := parsedURL.User.Password()
-						query.Set("pass", password)
+					// 解析原始 SOCKS5 URL
+					parsedURL, err := url.Parse(p.URL)
+					if err != nil {
+						log.Printf("⚠️ 解析 TG 代理 URL 失败: %s，继续使用原格式\n", p.URL)
+						proxyURL = p.URL
+					} else {
+						// 提取组件
+						server := parsedURL.Hostname()
+						port := parsedURL.Port()
+						userInfo := parsedURL.User
+						username := ""
+						password := ""
+						if userInfo != nil {
+							username = userInfo.Username()
+							password, _ = userInfo.Password()
+						}
+						// 构建 Telegram 代理 URL
+						proxyURL = fmt.Sprintf("https://t.me/socks?server=%s&port=%s&user=%s&pass=%s", server, port, username, password)
 					}
-					deepLink := fmt.Sprintf("https://t.me/socks?%s", query.Encode())
-					line = fmt.Sprintf("%s, 延迟: %.2fms, 国家: %s %s\n", deepLink, p.Latency, flag, countryName)
 				} else {
-					line = fmt.Sprintf("%s, 延迟: %.2fms, 国家: %s %s\n", p.URL, p.Latency, flag, countryName)
+					proxyURL = p.URL
 				}
+
+				// 生成每条代理的输出，加入下载速度信息
+				line := fmt.Sprintf("%s, 延迟: %.2fms, 速度: %.2fMB/s, 国家: %s %s\n", proxyURL, p.Latency, p.DownloadSpeed, flag, countryName)
 				outFile.WriteString(line)
 			}
 			log.Printf("💾 已写入 %d 条代理到文件: %s\n", len(proxies), fullPath)
@@ -1099,7 +1220,49 @@ func writeValidProxies(validProxies []ProxyResult) {
 			}
 		}
 	}
+
+	// 写入 CSV 文件（按下载速度降序排列）
+	var socks5Proxies []ProxyResult
+	for _, p := range validProxies {
+		socks5Proxies = append(socks5Proxies, p)
+	}
+	sort.Slice(socks5Proxies, func(i, j int) bool {
+		return socks5Proxies[i].DownloadSpeed > socks5Proxies[j].DownloadSpeed
+	})
+	if len(socks5Proxies) > 0 {
+		fullPath := filepath.Join(config.Settings.OutputDir, "socks5.csv")
+		outFile, err := os.Create(fullPath)
+		if err != nil {
+			log.Printf("❌ 写入文件 %s 失败: %v\n", fullPath, err)
+			return
+		}
+		defer outFile.Close()
+		writer := bufio.NewWriter(outFile)
+		writer.WriteString("代理协议,用户名,密码,IP,端口,国家,网络延迟,下载速度\n")
+		for _, p := range socks5Proxies {
+			parsedURL, _ := url.Parse(p.URL)
+			ip := parsedURL.Hostname()
+			port := parsedURL.Port()
+			username := ""
+			password := ""
+			if parsedURL.User != nil {
+				username = parsedURL.User.Username()
+				password, _ = parsedURL.User.Password()
+			}
+			countryCode := p.IP
+			countryName := COUNTRY_CODE_TO_NAME[countryCode]
+			protocol := p.Protocol
+			if strings.Contains(protocol, "socks5") {
+				protocol = "socks5"
+			}
+			line := fmt.Sprintf("%s,%s,%s,%s,%s,%s,%.2f ms,%.2f MB/s\n", protocol, username, password, ip, port, countryName, p.Latency, p.DownloadSpeed)
+			writer.WriteString(line)
+		}
+		writer.Flush()
+		log.Printf("💾 已写入 %d 条代理到文件: %s\n", len(socks5Proxies), fullPath)
+	}
 }
+
 
 // runCheck 是代理检测的核心逻辑
 func runCheck() {
@@ -1171,12 +1334,19 @@ func runCheck() {
 	// 实时处理结果
 	for result := range resultsChan {
 		if result.Success {
-			// 打印可用代理的实时信息
-			log.Printf(ColorGreen+"| 延迟: %.2fms | IP: %-15s"+ColorReset+" ✅ 可用: %s\n", result.Latency, result.IP, result.URL)
+			// 过滤低速代理
+			if result.DownloadSpeed > 0.1 {
+				// 打印可用代理的实时信息
+				if result.Reason != "" {
+					log.Printf(ColorGreen+"✅ 可用: %s | 延迟: %.2fms | 速度: %.2fMB | 原因: %s\n"+ColorReset, result.URL, result.Latency, result.DownloadSpeed, result.Reason)
+				} else {
+					log.Printf(ColorGreen+"✅ 可用: %s | 延迟: %.2fms | 速度: %.2fMB\n"+ColorReset, result.URL, result.Latency, result.DownloadSpeed)
+				}
 
-			validProxies = append(validProxies, result)
-			if result.IP != "" {
-				ipsToQuery[result.IP] = struct{}{}
+				validProxies = append(validProxies, result)
+				if result.IP != "" {
+					ipsToQuery[result.IP] = struct{}{}
+				}
 			}
 		} else {
 			// 打印失败代理的实时信息
@@ -1233,6 +1403,7 @@ func runCheck() {
 	protocolDistribution := make(map[string]int)
 	countryDistribution := make(map[string]int)
 	var latencies []float64
+	var downloadSpeeds []float64
 
 	for _, p := range validProxies {
 		protoKey := p.Protocol
@@ -1242,6 +1413,7 @@ func runCheck() {
 		protocolDistribution[protoKey]++
 		countryDistribution[p.IP]++
 		latencies = append(latencies, p.Latency)
+		downloadSpeeds = append(downloadSpeeds, p.DownloadSpeed)
 	}
 
 	minLatency, maxLatency, avgLatency := 0.0, 0.0, 0.0
@@ -1254,6 +1426,18 @@ func runCheck() {
 			sum += l
 		}
 		avgLatency = sum / float64(len(latencies))
+	}
+
+	minSpeed, maxSpeed, avgSpeed := 0.0, 0.0, 0.0
+	if len(downloadSpeeds) > 0 {
+		sort.Float64s(downloadSpeeds)
+		minSpeed = downloadSpeeds[0]
+		maxSpeed = downloadSpeeds[len(downloadSpeeds)-1]
+		var sum float64
+		for _, s := range downloadSpeeds {
+			sum += s
+		}
+		avgSpeed = sum / float64(len(downloadSpeeds))
 	}
 
 	log.Println(ColorGreen + "\n🎉 代理检测报告" + ColorReset)
@@ -1288,6 +1472,12 @@ func runCheck() {
 		log.Printf("  - 均值: %.2fms\n", avgLatency)
 		log.Printf("  - 最低: %.2fms\n", minLatency)
 		log.Printf("  - 最高: %.2fms\n", maxLatency)
+	}
+	if len(downloadSpeeds) > 0 {
+		log.Println(ColorBlue + "\n📊 下载速度统计:" + ColorReset)
+		log.Printf("  - 均值: %.2f MB/s\n", avgSpeed)
+		log.Printf("  - 最低: %.2f MB/s\n", minSpeed)
+		log.Printf("  - 最高: %.2f MB/s\n", maxSpeed)
 	}
 	if len(failedProxiesStats) > 0 {
 		log.Println(ColorRed + "\n⚠️ 检测失败原因:" + ColorReset)
@@ -1338,6 +1528,12 @@ func runCheck() {
 		messageParts = append(messageParts, fmt.Sprintf("  - 最低: `%.2f`ms", minLatency))
 		messageParts = append(messageParts, fmt.Sprintf("  - 最高: `%.2f`ms", maxLatency))
 	}
+	if len(downloadSpeeds) > 0 {
+		messageParts = append(messageParts, "\n*📊 下载速度统计*:")
+		messageParts = append(messageParts, fmt.Sprintf("  - 均值: `%.2f` MB/s", avgSpeed))
+		messageParts = append(messageParts, fmt.Sprintf("  - 最低: `%.2f` MB/s", minSpeed))
+		messageParts = append(messageParts, fmt.Sprintf("  - 最高: `%.2f` MB/s", maxSpeed))
+	}
 	if len(failedProxiesStats) > 0 {
 		messageParts = append(messageParts, "\n*⚠️ 检测失败原因*:")
 		var reasons []string
@@ -1358,17 +1554,33 @@ func runCheck() {
 	finalTelegramMessage = strings.ReplaceAll(finalTelegramMessage, "\\`", "`")
 
 	if config.Telegram.BotToken != "" && config.Telegram.ChatID != "" {
-		if sendTelegramMessage(finalTelegramMessage) {
-			log.Println("✅ 检测报告推送成功")
-		} else {
-			log.Println("❌ 检测报告推送失败")
+		maxRetries := 3
+		for i := 0; i < maxRetries; i++ {
+			if sendTelegramMessage(finalTelegramMessage) {
+				log.Println("✅ 检测报告推送成功")
+				break
+			}
+			if i < maxRetries-1 {
+				log.Printf("❌ 检测报告推送失败 (第 %d 次)，5秒后重试...", i+1)
+				time.Sleep(5 * time.Second)
+			} else {
+				log.Println("❌ 检测报告推送失败，但程序将继续运行。")
+			}
 		}
 	}
 
 	log.Println(ColorCyan + "\n📤 正在推送所有输出文件..." + ColorReset)
+	csvFile := ""
 	for _, filePath := range OUTPUT_FILES {
+		if filePath == "socks5.csv" {
+			csvFile = filepath.Join(config.Settings.OutputDir, filePath)
+			continue
+		}
 		fullPath := filepath.Join(config.Settings.OutputDir, filePath)
 		sendTelegramFile(fullPath)
+	}
+	if csvFile != "" {
+		sendTelegramFile(csvFile)
 	}
 
 	// 修复后的方案：参考启动消息，直接发送粗体字符串，不经过 escapeMarkdownV2
@@ -1410,37 +1622,71 @@ func showMenu() {
 // ========= 6. 主函数和辅助功能 =========
 
 func main() {
-	// 设置日志格式，去除时间戳，并将输出重定向到自定义的 LogWriter
-	log.SetFlags(0)
-	var err error
-	logFile, err = os.OpenFile("check_log.txt", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		log.Fatalf("❌ 无法打开日志文件: %v", err)
-	}
-	defer logFile.Close()
-	log.SetOutput(&LogWriter{})
-
-	if err := loadConfig("config.ini"); err != nil {
-		log.Fatalf("❌ 配置加载失败: %v", err)
-	}
-
-	// 设置默认值
-	if config.Settings.CheckTimeout <= 0 {
-		config.Settings.CheckTimeout = 10
-		log.Printf("⚠️ 未设置检测超时，使用默认值: %d 秒\n", config.Settings.CheckTimeout)
-	}
-	if config.Settings.MaxConcurrent <= 0 {
-		config.Settings.MaxConcurrent = 100
-		log.Printf("⚠️ 未设置最大并发数，使用默认值: %d\n", config.Settings.MaxConcurrent)
-	}
-	if config.Settings.FdipDir == "" {
-		config.Settings.FdipDir = "fdip"
-		log.Printf("⚠️ 未设置代理目录，使用默认值: %s\n", config.Settings.FdipDir)
-	}
-	if config.Settings.OutputDir == "" {
-		config.Settings.OutputDir = "output"
-		log.Printf("⚠️ 未设置输出目录，使用默认值: %s\n", config.Settings.OutputDir)
-	}
-
-	showMenu()
+    // 设置日志格式
+    log.SetFlags(0)
+    var err error
+    logFile, err = os.OpenFile("check_log.txt", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+    if err != nil {
+        log.Fatalf("❌ 无法打开日志文件: %v", err)
+    }
+    defer logFile.Close()
+    log.SetOutput(&LogWriter{})
+    // 命令行参数定义
+    showHelp := flag.Bool("h", false, "显示帮助信息")
+    configPath := flag.String("c", "config.ini", "指定配置文件路径（默认 config.ini）")
+    speedURL := flag.String("s", "", "自定义测速文件地址（可选）")
+    inputDir := flag.String("i", "", "指定代理输入目录（可选，覆盖配置文件 settings.fdip_dir）")
+    outputDir := flag.String("o", "", "指定输出目录（可选，覆盖配置文件 settings.output_dir）")
+    flag.Parse()
+    // 处理帮助选项
+    if *showHelp {
+        fmt.Println("代理检测工具 v1.0.3 使用帮助：")
+        fmt.Println(" -h 显示帮助信息")
+        fmt.Println(" -c <路径> 指定配置文件路径（默认 config.ini）")
+        fmt.Println(" -i <目录> 指定代理输入目录（可选，覆盖配置文件）")
+        fmt.Println(" -o <目录> 指定输出目录（可选，覆盖配置文件）")
+        fmt.Println(" -s <URL> 指定测速文件地址（可选）")
+        fmt.Println()
+        return
+    }
+    // 加载配置文件（在设置测速地址之前加载，以便从 ini 中读取）
+    if err := loadConfig(*configPath); err != nil {
+        log.Fatalf("❌ 配置加载失败: %v", err)
+    }
+    // 设置测速地址（优先级：命令行 > ini 配置 > 默认）
+    if *speedURL != "" {
+        SpeedTestURL = *speedURL
+    } else if config.Settings.SpeedTestURL != "" {
+        // 确保 URL 是完整的（添加 https:// 前缀如果缺少）
+        fullURL := config.Settings.SpeedTestURL
+        if !strings.HasPrefix(fullURL, "http://") && !strings.HasPrefix(fullURL, "https://") {
+            fullURL = "https://" + fullURL
+        }
+        SpeedTestURL = fullURL
+    }
+    // 优先使用命令行指定目录
+    if *inputDir != "" {
+        config.Settings.FdipDir = *inputDir
+    }
+    if *outputDir != "" {
+        config.Settings.OutputDir = *outputDir
+    }
+    // 默认参数修复
+    if config.Settings.CheckTimeout <= 0 {
+        config.Settings.CheckTimeout = 10
+        log.Printf("⚠️ 未设置检测超时，使用默认值: %d 秒\n", config.Settings.CheckTimeout)
+    }
+    if config.Settings.MaxConcurrent <= 0 {
+        config.Settings.MaxConcurrent = 100
+        log.Printf("⚠️ 未设置最大并发数，使用默认值: %d\n", config.Settings.MaxConcurrent)
+    }
+    if config.Settings.FdipDir == "" {
+        config.Settings.FdipDir = "fdip"
+        log.Printf("⚠️ 未设置代理目录，使用默认值: %s\n", config.Settings.FdipDir)
+    }
+    if config.Settings.OutputDir == "" {
+        config.Settings.OutputDir = "output"
+        log.Printf("⚠️ 未设置输出目录，使用默认值: %s\n", config.Settings.OutputDir)
+    }
+    showMenu()
 }
