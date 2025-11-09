@@ -1592,6 +1592,33 @@ func runCheck() {
 	log.Println(ColorGreen + "\033[1m🎉 程序运行结束！\033[0m" + ColorReset)
 }
 
+// showMenu 显示主菜单并处理用户输入
+func showMenu() {
+	for {
+		fmt.Println(ColorYellow + "\n--- 请选择一个操作 ---" + ColorReset)
+		fmt.Println("1. 🚀 " + ColorGreen + "开始代理检测" + ColorReset)
+		fmt.Println("2. 🌐 " + ColorBlue + "更新 GeoIP 数据库" + ColorReset)
+		fmt.Println("3. ❌ " + ColorRed + "退出" + ColorReset)
+		fmt.Print("请输入您的选择 (1/2/3): ")
+
+		reader := bufio.NewReader(os.Stdin)
+		input, _ := reader.ReadString('\n')
+		choice := strings.TrimSpace(input)
+
+		switch choice {
+		case "1":
+			runCheck()
+		case "2":
+			downloadGeoIPDatabase(GEOIP_DB_PATH)
+		case "3":
+			fmt.Println("👋 退出程序。")
+			return
+		default:
+			fmt.Println(ColorRed + "⚠️ 无效的选择，请重新输入。" + ColorReset)
+		}
+	}
+}
+
 // ========= 5.5. 交互式设置 (新添加) =========
 
 // promptUser 是一个辅助函数，用于显示提示并获取用户输入
@@ -1657,34 +1684,7 @@ func interactiveSetup(configPath string) error {
 	// 注意：这里我们让 main 函数中的 loadConfig 负责加载
 	return nil
 }
-// showMenu 显示主菜单并处理用户输入
-func showMenu() {
-	for {
-		fmt.Println(ColorYellow + "\n--- 请选择一个操作 ---" + ColorReset)
-		fmt.Println("1. 🚀 " + ColorGreen + "开始代理检测" + ColorReset)
-		fmt.Println("2. 🌐 " + ColorBlue + "更新 GeoIP 数据库" + ColorReset)
-		fmt.Println("3. ❌ " + ColorRed + "退出" + ColorReset)
-		fmt.Print("请输入您的选择 (1/2/3): ")
 
-		reader := bufio.NewReader(os.Stdin)
-		input, _ := reader.ReadString('\n')
-		choice := strings.TrimSpace(input)
-
-		switch choice {
-		case "1":
-			runCheck()
-		case "2":
-			downloadGeoIPDatabase(GEOIP_DB_PATH)
-		case "3":
-			fmt.Println("👋 退出程序。")
-			return
-		default:
-			fmt.Println(ColorRed + "⚠️ 无效的选择，请重新输入。" + ColorReset)
-		}
-	}
-}
-
-// ========= 6. 主函数和辅助功能 =========
 // ========= 6. 主函数和辅助功能 =========
 
 func main() {
