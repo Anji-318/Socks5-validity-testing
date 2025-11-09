@@ -1593,9 +1593,11 @@ func runCheck() {
 }
 
 // showMenu 显示主菜单并处理用户输入
+// showMenu 显示主菜单并处理用户输入
 func showMenu() {
 	for {
 		fmt.Println(ColorYellow + "\n--- 请选择一个操作 ---" + ColorReset)
+		// 修复：确保字符串在同一行
 		fmt.Println("1. 🚀 " + ColorGreen + "开始代理检测" + ColorReset)
 		fmt.Println("2. 🌐 " + ColorBlue + "更新 GeoIP 数据库" + ColorReset)
 		fmt.Println("3. ❌ " + ColorRed + "退出" + ColorReset)
@@ -1618,7 +1620,6 @@ func showMenu() {
 		}
 	}
 }
-
 // ========= 5.5. 交互式设置 (新添加) =========
 
 // promptUser 是一个辅助函数，用于显示提示并获取用户输入
@@ -1640,6 +1641,7 @@ func promptUser(reader *bufio.Reader, promptText string, defaultValue string) st
 // interactiveSetup 引导用户完成首次配置并保存到 config.ini
 func interactiveSetup(configPath string) error {
 	reader := bufio.NewReader(os.Stdin)
+	// 修复：确保字符串在同一行
 	fmt.Println(ColorYellow + "\n--- 首次运行配置 ---" + ColorReset)
 	fmt.Println("未找到配置文件，请按照提示输入配置。")
 	fmt.Println("按 [Enter] 键可使用方括号 [] 中的默认值。")
@@ -1648,6 +1650,7 @@ func interactiveSetup(configPath string) error {
 	cfg := ini.Empty()
 
 	// [telegram] section
+	// 修复：确保字符串在同一行
 	fmt.Println(ColorCyan + "\n[1. Telegram 配置 (可选)]" + ColorReset)
 	botToken := promptUser(reader, "请输入 Telegram Bot Token (留空跳过)", "")
 	chatID := promptUser(reader, "请输入 Telegram Chat ID (留空跳过)", "")
@@ -1660,7 +1663,7 @@ func interactiveSetup(configPath string) error {
 	outputDir := promptUser(reader, "请输入结果文件输出目录", "output")
 	checkTimeoutStr := promptUser(reader, "请输入检测超时 (秒)", "10")
 	maxConcurrentStr := promptUser(reader, "请输入最大并发数", "100")
-	speedTestURL := promptUser(reader, "请输入测速文件地址", DEFAULT_SPEED_TEST_URL) // 使用已定义的常量 [cite: 2]
+	speedTestURL := promptUser(reader, "请输入测速文件地址", DEFAULT_SPEED_TEST_URL) // 使用已定义的常量
 	presetProxy := promptUser(reader, "请输入预设代理 (SOCKS5/HTTP, 多个用逗号分隔, 留空跳过)", "")
 
 	// 将值设置到 ini 对象中
@@ -1684,7 +1687,6 @@ func interactiveSetup(configPath string) error {
 	// 注意：这里我们让 main 函数中的 loadConfig 负责加载
 	return nil
 }
-
 // ========= 6. 主函数和辅助功能 =========
 
 func main() {
